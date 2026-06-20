@@ -309,8 +309,8 @@ export default function Page() {
       }
 
       const constraints: MediaStreamConstraints = {
-        audio: isMuted ? false : { deviceId: selectedMic ? { exact: selectedMic } : undefined },
-        video: isCamOff ? false : {
+        audio: selectedMic ? { deviceId: { exact: selectedMic } } : true,
+        video: {
           deviceId: selectedCam ? { exact: selectedCam } : undefined,
           width: PRESET_CONSTRAINTS[preset].video.width,
           height: PRESET_CONSTRAINTS[preset].video.height,
@@ -320,6 +320,15 @@ export default function Page() {
 
       const stream = await navigator.mediaDevices.getUserMedia(constraints);
       localStreamRef.current = stream;
+
+      stream.getAudioTracks().forEach(t => t.enabled = !isMuted);
+      stream.getVideoTracks().forEach(t => {
+        t.enabled = !isCamOff;
+        if (isCamOff) {
+          t.stop();
+        }
+      });
+
       if (localPreviewVideoRef.current) {
         localPreviewVideoRef.current.srcObject = stream;
       }
@@ -388,25 +397,35 @@ export default function Page() {
       stopLobbyMicMeter();
 
       const selectedConstraints = PRESET_CONSTRAINTS[preset];
-      const audioConfig = isMuted ? false : {
-        deviceId: selectedMic ? { exact: selectedMic } : undefined,
-        echoCancellation: true,
-        noiseSuppression: true
-      };
+      try {
+        const audioConfig = {
+          deviceId: selectedMic ? { exact: selectedMic } : undefined,
+          echoCancellation: true,
+          noiseSuppression: true
+        };
 
-      const videoConfig = (isCamOff || preset === 'audio-only') ? false : {
-        deviceId: selectedCam ? { exact: selectedCam } : undefined,
-        width: selectedConstraints.video.width,
-        height: selectedConstraints.video.height,
-        frameRate: selectedConstraints.video.frameRate
-      };
+        const videoConfig = preset === 'audio-only' ? false : {
+          deviceId: selectedCam ? { exact: selectedCam } : undefined,
+          width: selectedConstraints.video.width,
+          height: selectedConstraints.video.height,
+          frameRate: selectedConstraints.video.frameRate
+        };
 
-      if (audioConfig || videoConfig) {
-        localStreamRef.current = await navigator.mediaDevices.getUserMedia({
+        const stream = await navigator.mediaDevices.getUserMedia({
           audio: audioConfig,
           video: videoConfig
         });
-      } else {
+        localStreamRef.current = stream;
+
+        stream.getAudioTracks().forEach(t => t.enabled = !isMuted);
+        stream.getVideoTracks().forEach(t => {
+          t.enabled = !isCamOff;
+          if (isCamOff) {
+            t.stop();
+          }
+        });
+      } catch (err) {
+        console.warn("Could not obtain initial media stream tracks:", err);
         localStreamRef.current = new MediaStream();
       }
 
@@ -916,12 +935,17 @@ export default function Page() {
   // -------------------------------------------------------------
   // CONTROLS INTERACTION LOGIC
   // -------------------------------------------------------------
-  const handleToggleMic = () => {
+  const handleToggleMic = async () => {
     const nextMute = !isMuted;
     setIsMuted(nextMute);
 
     if (localStreamRef.current) {
-      localStreamRef.current.getAudioTracks().forEach(t => t.enabled = !nextMute);
+      const audioTracks = localStreamRef.current.getAudioTracks();
+      if (audioTracks.length === 0 && !nextMute) {
+        await rebuildCallStream(nextMute, isCamOff);
+      } else {
+        audioTracks.forEach(t => t.enabled = !nextMute);
+      }
     }
     if (socketRef.current) {
       socketRef.current.emit('toggle-media', { type: 'audio', enabled: !nextMute });
@@ -941,7 +965,7 @@ export default function Page() {
         }
         if (localCallVideoRef.current) localCallVideoRef.current.srcObject = null;
       } else {
-        await rebuildCallStream();
+        await rebuildCallStream(isMuted, nextCam);
       }
     }
 
@@ -950,12 +974,18 @@ export default function Page() {
     }
   };
 
-  const rebuildCallStream = async () => {
+  const rebuildCallStream = async (customMute?: boolean, customCam?: boolean) => {
+    const activeMute = customMute !== undefined ? customMute : isMuted;
+    const activeCam = customCam !== undefined ? customCam : isCamOff;
     const selectedConstraints = PRESET_CONSTRAINTS[preset];
     try {
       const newStream = await navigator.mediaDevices.getUserMedia({
-        audio: isMuted ? false : { deviceId: selectedMic ? { exact: selectedMic } : undefined },
-        video: isCamOff ? false : {
+        audio: activeMute ? false : {
+          deviceId: selectedMic ? { exact: selectedMic } : undefined,
+          echoCancellation: true,
+          noiseSuppression: true
+        },
+        video: activeCam ? false : {
           deviceId: selectedCam ? { exact: selectedCam } : undefined,
           width: selectedConstraints.video.width,
           height: selectedConstraints.video.height,
@@ -963,7 +993,7 @@ export default function Page() {
         }
       });
 
-      // Swap out tracks dynamically for all connections
+      // Swap out video track dynamically for all connections
       const newVideoTrack = newStream.getVideoTracks()[0];
       if (newVideoTrack && localStreamRef.current) {
         const oldVideoTrack = localStreamRef.current.getVideoTracks()[0];
@@ -978,6 +1008,25 @@ export default function Page() {
           const videoSender = senders.find(s => s.track && s.track.kind === 'video');
           if (videoSender) {
             await videoSender.replaceTrack(newVideoTrack);
+          }
+        }
+      }
+
+      // Swap out audio track dynamically for all connections
+      const newAudioTrack = newStream.getAudioTracks()[0];
+      if (newAudioTrack && localStreamRef.current) {
+        const oldAudioTrack = localStreamRef.current.getAudioTracks()[0];
+        if (oldAudioTrack) {
+          localStreamRef.current.removeTrack(oldAudioTrack);
+          oldAudioTrack.stop();
+        }
+        localStreamRef.current.addTrack(newAudioTrack);
+
+        for (const socketId in peersRef.current) {
+          const senders = peersRef.current[socketId].pc.getSenders();
+          const audioSender = senders.find(s => s.track && s.track.kind === 'audio');
+          if (audioSender) {
+            await audioSender.replaceTrack(newAudioTrack);
           }
         }
       }
