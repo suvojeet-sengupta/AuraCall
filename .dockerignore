@@ -1,0 +1,9 @@
+node_modules
+.next
+dist
+.git
+.gitignore
+app_original.js
+index_original.html
+npm-debug.log
+docker-compose*.yml
