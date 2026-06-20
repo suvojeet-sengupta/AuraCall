@@ -201,7 +201,7 @@ nextApp.prepare().then(() => {
   });
 
   // Next.js request fallback handler
-  app.all('*', (req, res) => {
+  app.all('*all', (req, res) => {
     return handle(req, res);
   });
 
