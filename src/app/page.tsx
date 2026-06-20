@@ -114,8 +114,8 @@ export default function Page() {
   const [homeInput, setHomeInput] = useState('');
   
   // Settings & Toggles
-  const [isMuted, setIsMuted] = useState(false);
-  const [isCamOff, setIsCamOff] = useState(false);
+  const [isMuted, setIsMuted] = useState(true);
+  const [isCamOff, setIsCamOff] = useState(true);
   const [currentFilter, setCurrentFilter] = useState('none');
   const [isHandRaised, setIsHandRaised] = useState(false);
   const [isCaptionsOn, setIsCaptionsOn] = useState(false);
@@ -605,7 +605,7 @@ export default function Page() {
         socketId: targetSocketId,
         username: peerUsername,
         stream: null,
-        mediaState: initialMediaState || { audio: true, video: true, screen: false },
+        mediaState: initialMediaState || { audio: false, video: false, screen: false },
         isRaised: false,
         filter: 'none'
       }];

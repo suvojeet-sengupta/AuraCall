@@ -52,7 +52,7 @@ nextApp.prepare().then(() => {
       users[socket.id] = {
         roomId: cleanRoomId,
         username: cleanUsername,
-        mediaState: mediaState || { audio: true, video: true, screen: false }
+        mediaState: mediaState || { audio: false, video: false, screen: false }
       };
 
       if (!rooms[cleanRoomId]) {
@@ -70,7 +70,7 @@ nextApp.prepare().then(() => {
         .map(id => ({
           socketId: id,
           username: users[id]?.username || 'Unknown Peer',
-          mediaState: users[id]?.mediaState || { audio: true, video: true, screen: false }
+          mediaState: users[id]?.mediaState || { audio: false, video: false, screen: false }
         }));
 
       socket.emit('room-users', {
